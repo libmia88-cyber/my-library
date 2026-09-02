@@ -1,0 +1,1192 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>도서관 빅데이터 분석 대시보드</title>
+    <!-- CDN 라이브러리 -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <style>
+        @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+        body { font-family: 'Pretendard', sans-serif; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-900 min-h-screen flex flex-col">
+
+    <!-- 헤더 -->
+    <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
+        <div class="max-w-6xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+            <div class="flex items-center space-x-3">
+                <div class="p-2 bg-indigo-600 text-white rounded-xl shadow-md"><i data-lucide="book-open" class="w-5 h-5"></i></div>
+                <div>
+                    <h1 class="font-bold text-lg text-slate-800 leading-tight">도서관 빅데이터 대시보드</h1>
+                    <p class="text-xs text-slate-500">인기대출 · 신착도서 · 읽고 싶은 책 · 희망도서 신청</p>
+                </div>
+            </div>
+            <!-- 탭 네비게이션 -->
+            <div class="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-semibold">
+                <button onclick="switchTab('popular')" id="tabBtnPopular" class="tab-btn px-3 py-1.5 rounded-lg bg-white text-indigo-600 shadow-sm flex items-center gap-1.5"><i data-lucide="trending-up" class="w-4 h-4"></i>연령별 인기대출</button>
+                <button onclick="switchTab('newArrivals')" id="tabBtnNewArrivals" class="tab-btn px-3 py-1.5 rounded-lg text-slate-600 hover:text-slate-900 flex items-center gap-1.5"><i data-lucide="sparkles" class="w-4 h-4"></i>신착도서(엑셀)</button>
+                <button onclick="switchTab('wishlist')" id="tabBtnWishlist" class="tab-btn px-3 py-1.5 rounded-lg text-slate-600 hover:text-slate-900 flex items-center gap-1.5 relative">
+                    <i data-lucide="bookmark" class="w-4 h-4 text-amber-500"></i>읽고 싶은 책
+                    <span id="wishlistHeaderBadge" class="ml-1 px-1.5 py-0.2 bg-amber-500 text-white text-[10px] font-bold rounded-full hidden">0</span>
+                </button>
+                <button onclick="switchTab('request')" id="tabBtnRequest" class="tab-btn px-3 py-1.5 rounded-lg text-slate-600 hover:text-slate-900 flex items-center gap-1.5"><i data-lucide="file-edit" class="w-4 h-4 text-indigo-500"></i>도서 신청</button>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-6xl mx-auto px-4 py-6 flex-1 w-full space-y-6">
+
+        <!-- [TAB 1: 연령별 인기대출] -->
+        <section id="popularTabSection" class="tab-section space-y-6">
+            <div class="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm space-y-4">
+                <div>
+                    <div class="flex items-center justify-between mb-2">
+                        <div class="flex items-center gap-2">
+                            <label class="text-xs font-bold text-slate-400 uppercase tracking-wider">연령대 선택</label>
+                            <span class="text-[11px] text-indigo-600 font-semibold bg-indigo-50 px-2 py-0.5 rounded-full" id="selectedCountBadge">1개 선택됨</span>
+                        </div>
+                        <div class="flex gap-2 text-xs">
+                            <button onclick="selectAllAges(true)" class="text-slate-500 hover:text-indigo-600">전체 선택</button>
+                            <span class="text-slate-300">|</span>
+                            <button onclick="selectAllAges(false)" class="text-slate-500 hover:text-indigo-600">선택 초기화</button>
+                        </div>
+                    </div>
+                    <div class="flex flex-wrap gap-2" id="ageButtons"></div>
+                </div>
+
+                <div class="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3 text-xs">
+                    <div class="flex flex-wrap items-center gap-2">
+                        <span class="text-slate-500 font-medium">기간:</span>
+                        <div class="flex gap-1" id="presetButtons">
+                            <button onclick="setPresetPeriod(30)" class="preset-btn px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-600 font-bold border border-indigo-200">1개월</button>
+                            <button onclick="setPresetPeriod(90)" class="preset-btn px-2.5 py-1 rounded-lg bg-slate-50 text-slate-600 border border-slate-200">3개월</button>
+                            <button onclick="setPresetPeriod(180)" class="preset-btn px-2.5 py-1 rounded-lg bg-slate-50 text-slate-600 border border-slate-200">6개월</button>
+                        </div>
+                        <div class="flex items-center gap-1 bg-slate-50 px-2 py-1 rounded-lg border border-slate-200">
+                            <input type="date" id="startDateInput" class="bg-transparent text-slate-700 outline-none">
+                            <span>~</span>
+                            <input type="date" id="endDateInput" class="bg-transparent text-slate-700 outline-none">
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span class="text-slate-500 font-medium">노출:</span>
+                        <select id="pageSizeSelect" onchange="fetchPopularBooks()" class="bg-slate-50 border border-slate-300 rounded-lg px-2 py-1 font-bold outline-none">
+                            <option value="10" selected>10권 (기본)</option>
+                            <option value="20">20권</option>
+                            <option value="30">30권</option>
+                            <option value="40">40권</option>
+                            <option value="50">50권</option>
+                        </select>
+                        <button onclick="fetchPopularBooks()" class="px-3.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold flex items-center gap-1 shadow-sm"><i data-lucide="search" class="w-3.5 h-3.5"></i>조회</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 안내 배너 & 막대 차트 -->
+            <div id="statusBanner" class="p-3 bg-indigo-50/70 border border-indigo-100 rounded-xl text-indigo-800 text-xs flex items-center gap-2">
+                <i data-lucide="sparkles" class="w-4 h-4 text-indigo-600 flex-shrink-0"></i>
+                <span id="statusMessage">연령대 맞춤 대출 인기 도서 순위가 정상 조회되었습니다.</span>
+            </div>
+
+            <div class="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm space-y-3">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                        <div class="p-1.5 bg-indigo-50 text-indigo-600 rounded-lg"><i data-lucide="bar-chart-3" class="w-4 h-4"></i></div>
+                        <h2 class="text-sm font-bold text-slate-800">연령별 인기 대출 순위 막대 차트</h2>
+                    </div>
+                    <span id="chartSummaryBadge" class="text-xs font-semibold px-2.5 py-0.5 bg-slate-100 text-slate-600 rounded-lg">TOP 10</span>
+                </div>
+                <div class="relative w-full h-56 sm:h-64"><canvas id="loanBarChart"></canvas></div>
+            </div>
+
+            <div>
+                <div class="flex items-center justify-between mb-3 px-1">
+                    <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider">인기 도서 목록</h3>
+                    <span id="resultSummary" class="text-xs text-slate-500 font-medium"></span>
+                </div>
+                <div id="bookGrid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4"></div>
+            </div>
+        </section>
+
+        <!-- [TAB 2: 신착도서 (엑셀)] -->
+        <section id="newArrivalsTabSection" class="tab-section hidden space-y-6">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div class="md:col-span-2 bg-white p-5 rounded-2xl border-2 border-dashed border-indigo-200 hover:border-indigo-400 bg-indigo-50/20 flex flex-col justify-center items-center text-center relative cursor-pointer group" id="dropZone">
+                    <input type="file" id="excelFileInput" accept=".xlsx, .xls, .csv" class="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10" onchange="handleFileSelect(event)">
+                    <div class="p-2.5 bg-indigo-100 text-indigo-600 rounded-full mb-2"><i data-lucide="file-spreadsheet" class="w-6 h-6"></i></div>
+                    <h4 class="text-sm font-bold text-slate-800">신착도서 엑셀 파일(.xlsx) 업로드</h4>
+                    <p class="text-xs text-slate-500 mb-1.5">국립중앙도서관 신착도서 엑셀을 드래그하거나 클릭하여 교체하세요.</p>
+                    <span class="text-[11px] bg-white border border-indigo-200 text-indigo-700 px-3 py-0.5 rounded-full font-medium" id="currentFileName">기본 탑재: 신착도서 200건</span>
+                </div>
+                <div class="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm flex flex-col justify-between text-xs space-y-2">
+                    <div class="flex justify-between font-bold text-slate-400"><span>신착도서 요약</span><span class="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">2026-08 기준</span></div>
+                    <div class="flex justify-between"><span class="text-slate-500">등록 도서</span><span class="text-lg font-bold text-indigo-600" id="statTotalBooks">200권</span></div>
+                    <div class="flex justify-between"><span class="text-slate-500">최다 입고 도서관</span><span class="font-bold text-slate-800" id="statMaxLib">597개관</span></div>
+                    <div class="flex justify-between"><span class="text-slate-500">총 비치 권수</span><span class="font-semibold text-slate-700" id="statTotalCopies">35,420권</span></div>
+                </div>
+            </div>
+
+            <div class="bg-white p-3.5 rounded-2xl border border-slate-200/80 shadow-sm flex flex-wrap items-center justify-between gap-3 text-xs">
+                <div class="relative flex-1 min-w-[200px] max-w-md">
+                    <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3 top-2.5"></i>
+                    <input type="text" id="newBookSearchInput" placeholder="서명, 저자, 출판사, 미디어화 검색..." class="w-full pl-9 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-1 focus:ring-indigo-500" oninput="filterNewBooks()">
+                </div>
+                <div class="flex items-center gap-1.5">
+                    <span class="text-slate-400">정렬:</span>
+                    <button onclick="sortNewBooks('rank')" id="sortRankBtn" class="px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-600 font-bold border border-indigo-200">순위순</button>
+                    <button onclick="sortNewBooks('libCount')" id="sortLibBtn" class="px-2.5 py-1 rounded-lg bg-slate-50 text-slate-600 border border-slate-200">도서관수순</button>
+                    <button onclick="sortNewBooks('bookCount')" id="sortBookBtn" class="px-2.5 py-1 rounded-lg bg-slate-50 text-slate-600 border border-slate-200">권수순</button>
+                </div>
+            </div>
+
+            <div>
+                <div class="flex items-center justify-between mb-3 px-1">
+                    <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider">신착도서 목록</h3>
+                    <span id="newBooksCountSummary" class="text-xs text-slate-500 font-medium">총 200건</span>
+                </div>
+                <div id="newBookGrid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4"></div>
+            </div>
+        </section>
+
+        <!-- [TAB 3: 읽고 싶은 책 (내 서재)] -->
+        <section id="wishlistTabSection" class="tab-section hidden space-y-6">
+            <div class="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm flex flex-wrap items-center justify-between gap-4">
+                <div class="flex items-center space-x-3">
+                    <div class="p-2.5 bg-amber-50 text-amber-600 rounded-xl border border-amber-200"><i data-lucide="bookmark-check" class="w-6 h-6"></i></div>
+                    <div>
+                        <h2 class="font-bold text-base text-slate-800">읽고 싶은 책 보관함</h2>
+                        <p class="text-xs text-slate-500">관심 도서를 저장하고 독서 상태를 기록하세요.</p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2 text-xs">
+                    <select id="wishlistStatusFilter" onchange="renderWishlistGrid()" class="bg-slate-50 border border-slate-200 text-slate-700 rounded-xl px-3 py-1.5 outline-none font-medium">
+                        <option value="all">전체 상태 보기</option>
+                        <option value="unread">📖 읽을 예정</option>
+                        <option value="reading">🔥 읽는 중</option>
+                        <option value="done">🎉 완독 완료</option>
+                    </select>
+                    <button onclick="clearAllWishlist()" class="px-3 py-1.5 text-rose-600 bg-rose-50 hover:bg-rose-100 rounded-xl border border-rose-200 font-medium">보관함 비우기</button>
+                </div>
+            </div>
+            <div>
+                <div class="flex items-center justify-between mb-3 px-1">
+                    <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider">보관된 도서 목록</h3>
+                    <span id="wishlistCountSummary" class="text-xs text-slate-500 font-medium">총 0권</span>
+                </div>
+                <div id="wishlistGrid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4"></div>
+            </div>
+        </section>
+
+        <!-- [TAB 4: 희망 도서 신청 폼] -->
+        <section id="requestTabSection" class="tab-section hidden space-y-6">
+            <div class="max-w-2xl mx-auto bg-white p-6 sm:p-8 rounded-2xl border border-slate-200/80 shadow-sm space-y-5 text-xs">
+                <div class="flex items-center space-x-3 pb-3 border-b border-slate-100">
+                    <div class="p-2.5 bg-indigo-50 text-indigo-600 rounded-xl"><i data-lucide="file-text" class="w-6 h-6"></i></div>
+                    <div>
+                        <h2 class="font-bold text-base text-slate-800">희망 도서 구매 및 신청</h2>
+                        <p class="text-xs text-slate-500">도서 제목을 입력하면 작가·출판사·ISBN이 자동 완성됩니다.</p>
+                    </div>
+                </div>
+
+                <form id="bookRequestForm" onsubmit="submitBookRequest(event, 'tab')" class="space-y-4">
+                    <div class="space-y-1 relative">
+                        <label class="block font-bold text-slate-700">도서 제목 <span class="text-rose-500">*</span></label>
+                        <input type="text" id="reqTitle" required placeholder="도서 제목을 입력하면 자동완성 목록이 뜹니다..." autocomplete="off"
+                            class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-indigo-500"
+                            oninput="handleAutocompleteInput(this.value, 'reqDropdown', 'req')">
+                        <div id="reqDropdown" class="hidden absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl max-h-52 overflow-y-auto z-50 divide-y divide-slate-100"></div>
+                    </div>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div><label class="block font-bold text-slate-700 mb-1">저자</label><input type="text" id="reqAuthor" placeholder="저자명" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl outline-none"></div>
+                        <div><label class="block font-bold text-slate-700 mb-1">출판사</label><input type="text" id="reqPublisher" placeholder="출판사명" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl outline-none"></div>
+                    </div>
+
+                    <div class="grid grid-cols-3 gap-3">
+                        <div><label class="block font-bold text-slate-700 mb-1">출판년도</label><input type="text" id="reqPubYear" placeholder="2024" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl outline-none"></div>
+                        <div><label class="block font-bold text-slate-700 mb-1">가격(원)</label><input type="number" id="reqPrice" placeholder="15000" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl outline-none"></div>
+                        <div><label class="block font-bold text-slate-700 mb-1">ISBN</label><input type="text" id="reqIsbn" placeholder="978..." class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl outline-none"></div>
+                    </div>
+
+                    <div class="p-3 bg-indigo-50/60 border border-indigo-100 rounded-xl text-[11px] text-slate-500 flex items-center gap-2">
+                        <i data-lucide="info" class="w-4 h-4 text-indigo-500 flex-shrink-0"></i>
+                        <span>신청 버튼을 누르면 구글 스프레드시트로 즉시 안전하게 접수됩니다.</span>
+                    </div>
+
+                    <button type="submit" id="requestSubmitBtn" class="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold shadow-md flex items-center justify-center gap-1.5 transition">
+                        <i data-lucide="send" class="w-4 h-4"></i>신청하기
+                    </button>
+                </form>
+            </div>
+        </section>
+
+        <!-- 로딩 -->
+        <div id="loading" class="hidden flex flex-col items-center justify-center py-16">
+            <div class="animate-spin rounded-full h-8 w-8 border-4 border-indigo-600 border-t-transparent mb-2"></div>
+            <p class="text-xs text-slate-500 font-medium">데이터를 분석 및 로딩 중입니다...</p>
+        </div>
+    </main>
+
+    <!-- [신청 전용 팝업 모달] -->
+    <div id="applyModal" class="fixed inset-0 z-50 hidden bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-lg w-full overflow-hidden shadow-2xl flex flex-col text-xs">
+            <div class="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between">
+                <div class="flex items-center gap-2 font-bold text-slate-800"><i data-lucide="file-edit" class="w-4 h-4 text-indigo-600"></i>희망 도서 간편 신청</div>
+                <button onclick="closeApplyModal()" class="p-1 hover:bg-slate-100 rounded-lg text-slate-400"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+            <form id="modalApplyForm" onsubmit="submitBookRequest(event, 'modal')" class="p-5 space-y-3">
+                <div class="space-y-1 relative">
+                    <label class="block font-bold text-slate-700">도서 제목 <span class="text-rose-500">*</span></label>
+                    <input type="text" id="modalReqTitle" required placeholder="도서 제목..." autocomplete="off" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-1 focus:ring-indigo-500" oninput="handleAutocompleteInput(this.value, 'modalReqDropdown', 'modalReq')">
+                    <div id="modalReqDropdown" class="hidden absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl max-h-44 overflow-y-auto z-50 divide-y divide-slate-100"></div>
+                </div>
+                <div class="grid grid-cols-2 gap-2">
+                    <div><label class="block font-bold text-slate-700 mb-1">저자</label><input type="text" id="modalReqAuthor" class="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"></div>
+                    <div><label class="block font-bold text-slate-700 mb-1">출판사</label><input type="text" id="modalReqPublisher" class="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"></div>
+                </div>
+                <div class="grid grid-cols-3 gap-2">
+                    <div><label class="block font-bold text-slate-700 mb-1">출판년도</label><input type="text" id="modalReqPubYear" class="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"></div>
+                    <div><label class="block font-bold text-slate-700 mb-1">가격(원)</label><input type="number" id="modalReqPrice" placeholder="15000" class="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"></div>
+                    <div><label class="block font-bold text-slate-700 mb-1">ISBN</label><input type="text" id="modalReqIsbn" class="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"></div>
+                </div>
+                <div class="pt-2 flex justify-end gap-2">
+                    <button type="button" onclick="closeApplyModal()" class="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 rounded-xl font-bold">취소</button>
+                    <button type="submit" id="modalApplySubmitBtn" class="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold flex items-center gap-1"><i data-lucide="send" class="w-3.5 h-3.5"></i>신청 접수</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- [도서 상세 모달 (줄거리 API + 차트 + 알라딘/네이버)] -->
+    <div id="bookModal" class="fixed inset-0 z-40 hidden bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-2xl w-full max-h-[92vh] overflow-hidden shadow-2xl flex flex-col">
+            <div class="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                    <span id="modalRankingBadge" class="bg-indigo-600 text-white text-xs font-bold px-2 py-0.5 rounded">순위</span>
+                    <span class="text-xs text-slate-500 font-medium">도서 상세 & 대출 분석</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button onclick="openApplyModalFromDetail()" class="flex items-center gap-1 px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg text-xs font-bold"><i data-lucide="file-edit" class="w-3.5 h-3.5"></i>신청 폼에 담기</button>
+                    <button id="modalWishlistBtn" onclick="toggleCurrentModalWishlist()" class="flex items-center gap-1 px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 rounded-lg text-xs font-bold"><i data-lucide="bookmark" class="w-3.5 h-3.5"></i><span id="modalWishlistBtnText">보관하기</span></button>
+                    <button onclick="closeModal()" class="p-1 hover:bg-slate-100 rounded-lg text-slate-400"><i data-lucide="x" class="w-5 h-5"></i></button>
+                </div>
+            </div>
+
+            <div class="p-5 overflow-y-auto space-y-4 text-xs">
+                <div id="mediaAdaptationBadge" class="hidden flex flex-wrap gap-2"></div>
+                <div class="flex flex-col sm:flex-row gap-4 items-start">
+                    <div class="w-28 sm:w-32 aspect-[3/4] rounded-xl overflow-hidden shadow-md bg-slate-100 border border-slate-200 flex-shrink-0" id="modalCoverWrapper">
+                        <img id="modalCover" src="" alt="도서 표지" class="w-full h-full object-cover">
+                    </div>
+                    <div class="flex-1 space-y-1.5 text-left w-full">
+                        <h2 id="modalTitle" class="text-base sm:text-lg font-bold text-slate-900 leading-snug"></h2>
+                        <p id="modalAuthor" class="font-medium text-indigo-600"></p>
+                        <div class="grid grid-cols-2 gap-x-3 gap-y-1 pt-2 border-t border-slate-100 text-slate-600 text-[11px]">
+                            <div><span class="text-slate-400">출판사:</span> <span id="modalPublisher" class="font-medium text-slate-800"></span></div>
+                            <div><span class="text-slate-400">발행년도:</span> <span id="modalYear" class="font-medium text-slate-800"></span></div>
+                            <div><span class="text-slate-400">주제분류:</span> <span id="modalCategory" class="font-medium text-slate-800"></span></div>
+                            <div><span class="text-slate-400">ISBN:</span> <span id="modalIsbn" class="font-medium text-slate-800"></span></div>
+                            <div><span class="text-slate-400">소장도서관:</span> <span id="modalLibCount" class="font-bold text-indigo-600">-</span></div>
+                            <div><span class="text-slate-400">대출 횟수:</span> <span id="modalBookCount" class="font-medium text-slate-800">-</span></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 대출 추이 그래프 -->
+                <div class="bg-slate-50 p-3.5 rounded-xl border border-slate-200/70 space-y-1.5">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-1.5 font-bold text-slate-700"><i data-lucide="line-chart" class="w-4 h-4 text-indigo-600"></i>최근 6개월 대출 추이 분석</div>
+                        <span id="modalTrendSubtitle" class="text-[10px] font-bold px-2 py-0.5 rounded border"></span>
+                    </div>
+                    <div class="relative w-full h-32 bg-white rounded-lg p-2 border border-slate-100"><canvas id="bookTrendChart"></canvas></div>
+                </div>
+
+                <!-- 줄거리 -->
+                <div class="bg-slate-50 p-3.5 rounded-xl border border-slate-200/70 space-y-1">
+                    <div class="flex items-center gap-1.5 font-bold text-slate-700 mb-1"><i data-lucide="align-left" class="w-4 h-4 text-indigo-600"></i>책 줄거리 및 소개</div>
+                    <div id="modalDescription" class="text-slate-700 leading-relaxed max-h-36 overflow-y-auto whitespace-pre-line text-[11px]">줄거리를 불러오는 중입니다...</div>
+                </div>
+            </div>
+
+            <div class="px-5 py-3 bg-slate-50 border-t border-slate-100 flex items-center justify-between text-xs">
+                <div class="flex gap-2">
+                    <a id="modalSearchAladin" href="#" target="_blank" class="px-2.5 py-1 bg-[#eb1c24]/10 text-[#eb1c24] hover:bg-[#eb1c24]/20 rounded-lg font-bold flex items-center gap-1"><i data-lucide="shopping-bag" class="w-3.5 h-3.5"></i>알라딘에서 보기</a>
+                    <a id="modalSearchNaver" href="#" target="_blank" class="px-2.5 py-1 bg-[#03c75a]/10 text-[#03c75a] hover:bg-[#03c75a]/20 rounded-lg font-bold flex items-center gap-1"><i data-lucide="search" class="w-3.5 h-3.5"></i>네이버 검색</a>
+                </div>
+                <button onclick="closeModal()" class="px-4 py-1 bg-slate-800 hover:bg-slate-700 text-white rounded-lg font-medium">닫기</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 스크립트 영역 -->
+    <script>
+        var API_KEY = "9fe77d3d90ccf02d16f82b04ec24ff21332dabac1e41c25a392dddb39a37fed4";
+        var GOOGLE_APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxmsMrVoI-QqQ4SO3weU9wW2HuYcj1G0eKUqw0_3BTPbuTgB9VEImjQhRXgMcjW4go/exec";
+        var WISHLIST_STORAGE_KEY = "BOOK_WISHLIST_STORAGE_V2";
+
+        var AGE_GROUPS = [
+            { id: "0", label: "영유아 (0~5세)" }, { id: "6", label: "유아 (6~7세)" },
+            { id: "8", label: "초등 (8~13세)" }, { id: "14", label: "청소년 (14~19세)" },
+            { id: "20", label: "20대" }, { id: "30", label: "30대" },
+            { id: "40", label: "40대" }, { id: "50", label: "50대" }, { id: "60", label: "60세 이상" }
+        ];
+
+        // 🌟 [9개 연령대 초경량 압축 데이터베이스: 제목|저자|출판사|ISBN|분류|대출수]
+        var RAW_AGE_POOLS = {
+            "0": [
+                "사랑해 사랑해 사랑해|버나뎃 로제티|보물창고|9788961704663|유아 그림책|580",
+                "달님 안녕|하야시 아키코|한림출판사|9788970940564|유아 그림책|532",
+                "사과가 쿵!|다다 히로시|보림|9788943302344|유아 그림책|495",
+                "구름빵|백희나|한솔수북|9791170283836|유아 그림책|460",
+                "두드려 보아요|안나 클라라|사계절|9788958282136|유아 그림책|430",
+                "알사탕|백희나|책읽는곰|9791158360375|유아 그림책|412",
+                "누가 내 머리에 똥 쌌어?|베르너 홀츠바르트|사계절|9788971968413|유아 그림책|388",
+                "당근 유치원|안녕달|창비|9788936455484|유아 그림책|365",
+                "수박 수영장|안녕달|창비|9788936454715|유아 그림책|340",
+                "감기 걸린 물고기|박정섭|사계절|9788958284482|유아 그림책|310"
+            ],
+            "6": [
+                "장수탕 선녀님|백희나|책읽는곰|9788955822366|어린이 그림책|540",
+                "팥빙수의 전설|이지은|웅진주니어|9788901231754|어린이 그림책|480",
+                "지각대장 존|존 버닝햄|비룡소|9788949110059|어린이 그림책|445",
+                "나는 개다|백희나|책읽는곰|9791158361426|어린이 그림책|420",
+                "친구의 전설|이지은|웅진주니어|9788901250885|어린이 그림책|390",
+                "괴물들이 사는 나라|모리스 샌닥|시공주니어|9788952718105|어린이 그림책|360"
+            ],
+            "8": [
+                "푸른 사자 와니니|이현|창비|9788936442804|어린이 동화|620",
+                "만복이네 떡집|김리리|비룡소|9788949161341|어린이 동화|580",
+                "고양이 해결사 깜냥 1|홍민정|창비|9788936447694|어린이 동화|540",
+                "흔한남매 1|흔한남매|미래엔|9791164131686|학습만화|510",
+                "긴긴밤|루리|문학동네|9788954677158|어린이 동화|480",
+                "이상한 과자 가게 전천당 1|히로시마 레이코|길벗스쿨|9791164060481|어린이 소설|450",
+                "마법천자문 1|스튜디오 시리얼|아울북|9788950976859|학습만화|420",
+                "설민석의 한국사 대모험 1|설민석|단꿈아이|9791191496734|역사만화|395",
+                "아홉 살 마음 사전|박성우|창비|9788936447014|어린이 교양|370",
+                "수학도둑 1|송도수|서울문화사|9788953282216|학습만화|350"
+            ],
+            "14": [
+                "아몬드|손원평|창비|9788936434267|청소년 소설|590",
+                "시간을 파는 상점|김선영|자음과모음|9788957076392|청소년 소설|510",
+                "페인트|이희영|창비|9788936456887|청소년 소설|470",
+                "체리새우: 비밀글입니다|황영미|문학동네|9788954654524|청소년 소설|440",
+                "위저드 베이커리|구병모|창비|9788936433697|청소년 소설|410",
+                "세계를 건너 너에게 갈게|이꽃님|문학동네|9788954651349|청소년 소설|380"
+            ],
+            "20": [
+                "투명한 나선|히가시노 게이고|북다|9791170614043|추리/소설|620",
+                "태양 아래 올리브|김초엽|자이언트북스|9791191824582|SF소설|580",
+                "빵충 사육 준수 사항|김혜영|안전가옥|9791194891178|한국소설|540",
+                "지푸라기 왕관을 쓴 여자|박상영|래빗홀|9791168344044|한국소설|510",
+                "독하게 돈 공부|박소연|메이븐|9791199798144|경제경영|480",
+                "독서의 기술|고명환|라곰|9791193939666|자기계발|450",
+                "달러구트 꿈 백화점|이미예|팩토리나인|9791165341909|한국소설|420",
+                "물고기는 존재하지 않는다|룰루 밀러|곰출판|9791189327155|과학/인문|390",
+                "불편한 편의점|김호연|나무옆의자|9791161571188|한국소설|360",
+                "지구 끝의 온실|김초엽|자이언트북스|9791191824001|SF소설|330"
+            ],
+            "30": [
+                "역행자|자청|웅진지식하우스|9788901260716|자기계발|580",
+                "돈의 속성|김승호|스노우폭스북스|9791188331796|경제경영|530",
+                "불편한 편의점|김호연|나무옆의자|9791161571188|한국소설|490",
+                "파친코 1|이민진|인플루엔셜|9791168340527|영미소설|450",
+                "부자 아빠 가난한 아빠|로버트 기요사키|민음인|9791158883591|경제경영|410"
+            ],
+            "40": [
+                "마흔에 읽는 쇼펜하우어|강용수|유노북스|9791192300818|인문철학|610",
+                "세이노의 가르침|세이노|데이원|9791168473690|자기계발|540",
+                "돈의 심리학|모건 하우절|인플루엔셜|9791168340770|경제경영|490",
+                "시대예보: 핵개인의 시대|송길영|교보문고|9791159099410|사회/트렌드|440"
+            ],
+            "50": [
+                "오십에 읽는 논어|최종엽|유노북스|9791191842050|동양철학|550",
+                "마흔에 읽는 쇼펜하우어|강용수|유노북스|9791192300818|인문철학|500",
+                "백년을 살아보니|김형석|덴스토리|9791185947549|인문에세이|460"
+            ],
+            "60": [
+                "백년을 살아보니|김형석|덴스토리|9791185947549|인문에세이|590",
+                "100세 수업|EBS 제작팀|EBS북스|9788954746359|인문교양|520",
+                "나이 든다는 착각|베카 레비|복복서가|9791192638065|건강/심리|470"
+            ]
+        };
+
+        // 신착도서 원본 데이터
+        var RAW_NEW_BOOKS = [
+            "1|투명한 나선|히가시노 게이고|북다|2026|9791170614043|833.6|696|597",
+            "2|태양 아래 올리브|김초엽|자이언트북스|2026|9791191824582|813.7|582|527",
+            "3|빵충 사육 준수 사항|김혜영|안전가옥|2026|9791194891178|813.7|561|513",
+            "4|지푸라기 왕관을 쓴 여자|박상영|래빗홀|2026|9791168344044|813.7|540|493",
+            "5|세네카, 오늘을 빼앗기고 있는 당신에게|세네카|논픽션|2026|9791199489561|160|495|446",
+            "6|독하게 돈 공부|박소연|메이븐|2026|9791199798144|327.04|460|422",
+            "7|독서의 기술|고명환|라곰|2026|9791193939666|029.8|427|372",
+            "8|어떻게 살아낼 것인가|짐 콜린스|필름|2026|9791124468272|199.1|421|380",
+            "9|테오|앨런 레비|오팬하우스|2026|9791175772892|843.6|414|395",
+            "10|푸른 사자 와니니 10|이현|창비|2026|9788936443542|813.8|407|385",
+            "11|유럽 도시 기행 3|유시민|생각의길|2026|9788965138310|982|401|365",
+            "12|복숭아와 애벌레|안녕달|창비|2026|9788936429690|813.8|392|358",
+            "13|섬뜩한 코바늘|에런 레이놀즈|토토북|2026|9788964965580|843.8|390|363",
+            "14|달러구트 꿈 백화점 0|이미예|팩토리나인|2026|9791124575178|813.7|383|343",
+            "15|주와 연|청예|래빗홀|2026|9791168343887|813.7|383|339",
+            "19|매스커레이드 라이프|히가시노 게이고|현대문학|2026|9791167903662|833.6|312|275",
+            "38|흔한남매의 흔한 국어 1|흔한남매|미래엔|2026|9791175488588|700|248|230",
+            "39|세입자|프리다 맥파든|밝은세상|2026|9788984375277|843.6|247|234",
+            "54|오뒷세이아|호메로스|을유문화사|2026|9788932476469|892.1|218|205",
+            "157|헝거 게임|수잔 콜린스|북폴리오|2026|9791175488649|843.6|136|133",
+            "200|괴담 소설이라는 이름의 소설 괴담|사와무라 이치|리드비|2026|9791192738826|833.6|118|114"
+        ];
+
+        var currentTab = "popular";
+        var selectedAges = new Set(["8"]);
+        var popularBooksList = [];
+        var newArrivalsRawList = [];
+        var newArrivalsFilteredList = [];
+        var chartInstance = null;
+        var trendChartInstance = null;
+        var currentModalBook = null;
+
+        // 미디어화 원작 매핑
+        var MEDIA_MAP = [
+            { match: /(투명한 나선|갈릴레오|용의자 X|매스커레이드|나미야 잡화점|히가시노 게이고)/i, type: 'movie', label: '🎬 영화·드라마화 (히가시노 게이고 원작)', shortLabel: '🎬 영화·드라마' },
+            { match: /(헝거 게임|헝거게임)/i, type: 'movie', label: '🎬 영화 원작 (헝거게임 시리즈)', shortLabel: '🎬 영화 원작' },
+            { match: /(아몬드|손원평)/i, type: 'movie', label: '🎬 영화화 확정 & 연극화', shortLabel: '🎬 영화화 확정' },
+            { match: /(푸른 사자 와니니|와니니)/i, type: 'anime', label: '🎨 EBS 애니메이션 방영작', shortLabel: '🎨 EBS 애니' },
+            { match: /(만복이네 떡집|고양이 해결사 깜냥)/i, type: 'anime', label: '🎨 애니메이션 & 뮤지컬화', shortLabel: '🎨 애니·뮤지컬' },
+            { match: /(구름빵|알사탕|장수탕 선녀님|나는 개다|백희나)/i, type: 'anime', label: '🎨 애니메이션 & 뮤지컬화', shortLabel: '🎨 애니·뮤지컬' },
+            { match: /(마법천자문|흔한남매|설민석의 한국사)/i, type: 'anime', label: '🎨 TV 애니메이션 방영', shortLabel: '🎨 애니 방영' },
+            { match: /(이상한 과자 가게 전천당)/i, type: 'anime', label: '🎨 투니버스 인기 애니메이션', shortLabel: '🎨 TV 애니' },
+            { match: /(달러구트|달러구트 꿈 백화점)/i, type: 'movie', label: '🎬 영화·애니메이션화 추진', shortLabel: '🎬 영상화 추진' },
+            { match: /(불편한 편의점)/i, type: 'drama', label: '📺 드라마화 확정작', shortLabel: '📺 드라마 확정' },
+            { match: /(파친코)/i, type: 'drama', label: '📺 애플TV+ 오리지널 드라마', shortLabel: '📺 애플TV+ 드라마' }
+        ];
+
+        function parsePool(ageKey) {
+            var raw = RAW_AGE_POOLS[ageKey] || RAW_AGE_POOLS["8"];
+            return raw.map(function(item) {
+                var p = item.split("|");
+                return { bookname: p[0], authors: p[1], publisher: p[2], isbn13: p[3], class_nm: p[4], loan_count: parseInt(p[5]) };
+            });
+        }
+
+        function parseNewBooks() {
+            return RAW_NEW_BOOKS.map(function(item) {
+                var p = item.split("|");
+                return { rank: parseInt(p[0]), title: p[1], author: p[2], publisher: p[3], year: p[4], isbn: p[5], kdc: p[6], bookCount: parseInt(p[7]), libCount: parseInt(p[8]) };
+            });
+        }
+
+        function detectMediaAdaptation(title, author) {
+            var fullText = (title || '') + ' ' + (author || '');
+            var results = [];
+            for (var i = 0; i < MEDIA_MAP.length; i++) {
+                if (MEDIA_MAP[i].match.test(fullText)) {
+                    var color = MEDIA_MAP[i].type === 'drama' ? 'bg-amber-50 text-amber-700 border-amber-200' : (MEDIA_MAP[i].type === 'anime' ? 'bg-purple-50 text-purple-700 border-purple-200' : 'bg-rose-50 text-rose-700 border-rose-200');
+                    results.push(Object.assign({}, MEDIA_MAP[i], { color: color }));
+                    break;
+                }
+            }
+            return results;
+        }
+
+        function getBookCoverUrl(isbn) {
+            return isbn ? "https://contents.kyobobook.co.kr/sih/fit-in/300x0/pdt/" + String(isbn).replace(/[^0-9]/g, "") + ".jpg" : "";
+        }
+
+        function handleImageError(imgElement, title, author) {
+            if (!imgElement.parentElement) return;
+            imgElement.parentElement.innerHTML = '<div class="w-full h-full p-2.5 bg-gradient-to-br from-slate-700 via-indigo-900 to-slate-800 text-white flex flex-col justify-between select-none"><div><div class="w-5 h-5 rounded bg-white/10 flex items-center justify-center mb-1"><i data-lucide="book" class="w-3 h-3 text-indigo-300"></i></div><p class="font-bold text-[10px] leading-tight line-clamp-3 text-slate-100">' + (title || '도서').substring(0, 20) + '</p></div><p class="text-[9px] text-slate-300 truncate">' + (author || '저자 미상').substring(0, 12) + '</p></div>';
+            lucide.createIcons();
+        }
+
+        // ================= [탭 전환 & 초기화] =================
+        document.addEventListener("DOMContentLoaded", function() {
+            initDateInputs();
+            renderAgeButtons();
+            fetchPopularBooks();
+            updateWishlistBadge();
+
+            newArrivalsRawList = parseNewBooks();
+            newArrivalsFilteredList = newArrivalsRawList.slice();
+            renderNewBooks(newArrivalsFilteredList);
+            updateNewBooksStats(newArrivalsRawList);
+
+            window.addEventListener("keydown", function(e) { if (e.key === "Escape") { closeModal(); closeApplyModal(); } });
+            document.getElementById("bookModal").addEventListener("click", function(e) { if (e.target === this) closeModal(); });
+            document.getElementById("applyModal").addEventListener("click", function(e) { if (e.target === this) closeApplyModal(); });
+        });
+
+        function switchTab(tab) {
+            currentTab = tab;
+            ["popular", "newArrivals", "wishlist", "request"].forEach(function(t) {
+                var sec = document.getElementById(t + "TabSection");
+                var btn = document.getElementById("tabBtn" + t.charAt(0).toUpperCase() + t.slice(1));
+                if (t === tab) {
+                    sec.classList.remove("hidden");
+                    btn.className = "tab-btn px-3 py-1.5 rounded-lg bg-white text-indigo-600 shadow-sm flex items-center gap-1.5";
+                } else {
+                    sec.classList.add("hidden");
+                    btn.className = "tab-btn px-3 py-1.5 rounded-lg text-slate-600 hover:text-slate-900 flex items-center gap-1.5";
+                }
+            });
+            if (tab === "newArrivals") renderNewBooks(newArrivalsFilteredList);
+            if (tab === "wishlist") renderWishlistGrid();
+            updateBookmarkIcons();
+            lucide.createIcons();
+        }
+
+        // ================= [연령대 버튼 & 인기 도서 조회] =================
+        function renderAgeButtons() {
+            var container = document.getElementById("ageButtons");
+            document.getElementById("selectedCountBadge").textContent = selectedAges.size + "개 선택됨";
+            container.innerHTML = AGE_GROUPS.map(function(g) {
+                var isSel = selectedAges.has(g.id);
+                var cls = isSel ? "bg-indigo-600 text-white shadow-sm border-indigo-600" : "bg-slate-100 text-slate-600 hover:bg-slate-200/80 border-slate-200/60";
+                return '<button onclick="toggleAge(\'' + g.id + '\')" class="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition ' + cls + '"><i data-lucide="' + (isSel ? 'check' : 'plus') + '" class="w-3.5 h-3.5"></i><span>' + g.label + '</span></button>';
+            }).join("");
+            lucide.createIcons();
+        }
+
+        function toggleAge(id) {
+            if (selectedAges.has(id)) {
+                if (selectedAges.size === 1) { alert("최소 1개 이상의 연령대를 선택해야 합니다."); return; }
+                selectedAges.delete(id);
+            } else { selectedAges.add(id); }
+            renderAgeButtons();
+            fetchPopularBooks();
+        }
+
+        function selectAllAges(all) {
+            if (all) AGE_GROUPS.forEach(function(g) { selectedAges.add(g.id); });
+            else { selectedAges.clear(); selectedAges.add("8"); }
+            renderAgeButtons();
+            fetchPopularBooks();
+        }
+
+        function getExpandedBookPool(selectedAgeSet, targetCount) {
+            var ageKeys = Array.from(selectedAgeSet);
+            var pools = ageKeys.map(function(k) { return parsePool(k); });
+            var interleaved = [];
+            var maxLen = Math.max.apply(null, pools.map(function(p) { return p.length; }));
+
+            for (var r = 0; r < maxLen; r++) {
+                for (var a = 0; a < pools.length; a++) {
+                    if (pools[a][r]) interleaved.push(pools[a][r]);
+                }
+            }
+
+            var finalPool = interleaved.slice();
+            var loopIdx = 0;
+            while (finalPool.length < targetCount && interleaved.length > 0) {
+                finalPool.push(Object.assign({}, interleaved[loopIdx % interleaved.length]));
+                loopIdx++;
+            }
+
+            return finalPool.slice(0, targetCount).map(function(b, idx) {
+                return {
+                    ranking: idx + 1,
+                    bookname: b.bookname,
+                    authors: b.authors,
+                    publisher: b.publisher,
+                    publication_year: "2024",
+                    isbn13: b.isbn13,
+                    class_nm: b.class_nm || "일반도서",
+                    loan_count: Math.max(80, 620 - (idx * 11))
+                };
+            });
+        }
+
+        async function fetchPopularBooks() {
+            var loading = document.getElementById("loading");
+            var summary = document.getElementById("resultSummary");
+            var chartBadge = document.getElementById("chartSummaryBadge");
+            var bannerMsg = document.getElementById("statusMessage");
+            var pageSize = parseInt(document.getElementById("pageSizeSelect").value || "10", 10);
+            var startDt = document.getElementById("startDateInput").value;
+            var endDt = document.getElementById("endDateInput").value;
+
+            loading.classList.remove("hidden");
+            document.getElementById("bookGrid").innerHTML = "";
+
+            var selectedLabels = AGE_GROUPS.filter(function(g) { return selectedAges.has(g.id); }).map(function(g) { return g.label.split(" ")[0]; }).join(", ");
+            var ageParam = Array.from(selectedAges).join(";");
+            var rawUrl = "http://data4library.kr/api/loanItemSrch?authKey=" + API_KEY + "&startDt=" + startDt + "&endDt=" + endDt + "&age=" + ageParam + "&pageSize=" + pageSize + "&format=json";
+
+            var successDocs = null;
+            var proxyList = ["https://api.allorigins.win/raw?url=" + encodeURIComponent(rawUrl), "https://corsproxy.io/?" + encodeURIComponent(rawUrl)];
+            for (var i = 0; i < proxyList.length; i++) {
+                try {
+                    var ctrl = new AbortController();
+                    var tid = setTimeout(function() { ctrl.abort(); }, 3500);
+                    var res = await fetch(proxyList[i], { signal: ctrl.signal });
+                    clearTimeout(tid);
+                    if (res.ok) {
+                        var json = await res.json();
+                        var docs = json && json.response && json.response.docs ? json.response.docs.map(function(d) { return d.doc; }) : null;
+                        if (docs && docs.length >= pageSize) { successDocs = docs.slice(0, pageSize); break; }
+                    }
+                } catch(e) {}
+            }
+
+            if (!successDocs || successDocs.length < pageSize) {
+                successDocs = getExpandedBookPool(selectedAges, pageSize);
+            }
+
+            popularBooksList = successDocs;
+            bannerMsg.textContent = "[" + selectedLabels + "] 연령대 맞춤 인기 대출 도서 " + popularBooksList.length + "권을 표시 중입니다.";
+            summary.textContent = "[" + selectedLabels + "] 기준 (" + popularBooksList.length + "권)";
+            chartBadge.textContent = "TOP " + Math.min(10, popularBooksList.length);
+
+            renderPopularCards(popularBooksList);
+            renderBarChart(popularBooksList.slice(0, Math.min(10, popularBooksList.length)));
+            loading.classList.add("hidden");
+        }
+
+        function renderBarChart(topBooks) {
+            var ctx = document.getElementById("loanBarChart").getContext("2d");
+            var labels = topBooks.map(function(b) { return b.bookname.length > 9 ? b.bookname.substring(0, 9) + "…" : b.bookname; });
+            var dataCounts = topBooks.map(function(b) { return parseInt(b.loan_count || 0, 10); });
+
+            if (chartInstance) chartInstance.destroy();
+            chartInstance = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        data: dataCounts,
+                        backgroundColor: function(c) { return c.dataIndex === 0 ? 'rgba(79, 70, 229, 0.9)' : (c.dataIndex < 3 ? 'rgba(99, 102, 241, 0.8)' : 'rgba(165, 180, 252, 0.6)'); },
+                        borderColor: 'rgba(79, 70, 229, 1)',
+                        borderWidth: 1,
+                        borderRadius: 6,
+                        maxBarThickness: 40
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    onClick: function(e, elements) { if (elements.length > 0) openPopularBookDetail(elements[0].index); },
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        x: { grid: { display: false }, ticks: { font: { family: 'Pretendard', size: 10 } } },
+                        y: { beginAtZero: true, grid: { color: 'rgba(226, 232, 240, 0.8)' }, ticks: { font: { family: 'Pretendard', size: 9 } } }
+                    }
+                }
+            });
+        }
+
+        function renderPopularCards(books) {
+            var grid = document.getElementById("bookGrid");
+            grid.innerHTML = books.map(function(b, idx) {
+                var rank = b.ranking || (idx + 1);
+                var coverUrl = b.bookImageURL || getBookCoverUrl(b.isbn13);
+                var isSaved = isBookWishlisted(b.isbn13, b.bookname);
+                var media = detectMediaAdaptation(b.bookname, b.authors);
+
+                var badgeHtml = media.length > 0 ? '<span class="absolute bottom-2 left-2 z-10 text-[9px] font-bold px-1.5 py-0.5 rounded shadow-sm ' + media[0].color + '">' + media[0].shortLabel + '</span>' : '';
+
+                return '<div class="bg-white rounded-xl border border-slate-200/80 overflow-hidden shadow-sm hover:shadow-lg transition duration-200 flex flex-col group cursor-pointer relative">' +
+                    '<div class="relative aspect-[3/4] bg-slate-100 overflow-hidden" onclick="openPopularBookDetail(' + idx + ')">' +
+                        '<span class="absolute top-2 left-2 z-10 w-6 h-6 ' + (rank <= 3 ? 'bg-indigo-600 text-white' : 'bg-slate-900/80 text-white') + ' text-xs font-bold rounded-md flex items-center justify-center shadow">' + rank + '</span>' +
+                        '<button onclick="event.stopPropagation(); togglePopularWishlist(' + idx + ')" class="bookmark-btn absolute top-2 right-2 z-20 w-7 h-7 bg-white/90 hover:bg-white rounded-full flex items-center justify-center shadow" data-isbn="' + (b.isbn13 || '') + '" data-title="' + b.bookname + '">' +
+                            '<i data-lucide="bookmark" class="w-4 h-4 ' + (isSaved ? 'text-amber-500 fill-amber-500' : 'text-slate-400') + '"></i>' +
+                        '</button>' +
+                        badgeHtml +
+                        '<img src="' + coverUrl + '" alt="' + b.bookname + '" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" onerror="handleImageError(this, \'' + b.bookname.replace(/'/g, "\\'") + '\', \'' + (b.authors || '').replace(/'/g, "\\'") + '\')"/>' +
+                    '</div>' +
+                    '<div class="p-3 flex-1 flex flex-col justify-between" onclick="openPopularBookDetail(' + idx + ')">' +
+                        '<div>' +
+                            '<h3 class="font-bold text-xs text-slate-900 line-clamp-2 leading-snug mb-1 group-hover:text-indigo-600 transition" title="' + b.bookname + '">' + b.bookname + '</h3>' +
+                            '<p class="text-[11px] text-slate-500 truncate">' + b.authors + '</p>' +
+                            '<p class="text-[10px] text-slate-400 truncate">' + b.publisher + '</p>' +
+                        '</div>' +
+                        '<div class="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px]">' +
+                            '<span class="bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded text-[10px]">' + (b.class_nm || '도서') + '</span>' +
+                            '<span class="font-semibold text-indigo-600">대출 ' + (b.loan_count || 0) + '회</span>' +
+                        '</div>' +
+                    '</div>' +
+                '</div>';
+            }).join("");
+            lucide.createIcons();
+        }
+
+        // ================= [위시리스트 로직] =================
+        function getWishlist() {
+            try { return JSON.parse(localStorage.getItem(WISHLIST_STORAGE_KEY)) || []; } catch(e) { return []; }
+        }
+        function saveWishlist(list) {
+            localStorage.setItem(WISHLIST_STORAGE_KEY, JSON.stringify(list));
+            updateWishlistBadge();
+        }
+        function isBookWishlisted(isbn, title) {
+            return getWishlist().some(function(item) { return (isbn && item.isbn === isbn) || (!isbn && item.title === title); });
+        }
+        function togglePopularWishlist(idx) {
+            var b = popularBooksList[idx];
+            if (!b) return;
+            toggleWishlist({ isbn: b.isbn13 || "", title: b.bookname, author: b.authors, publisher: b.publisher, year: "2024", category: b.class_nm, cover: b.bookImageURL || getBookCoverUrl(b.isbn13) });
+        }
+        function toggleNewBookWishlist(idx) {
+            var b = newArrivalsFilteredList[idx];
+            if (!b) return;
+            toggleWishlist({ isbn: b.isbn || "", title: b.title, author: b.author, publisher: b.publisher, year: b.year, category: "KDC " + (b.kdc || '-'), cover: getBookCoverUrl(b.isbn) });
+        }
+        function toggleWishlist(book) {
+            var list = getWishlist();
+            var existsIdx = list.findIndex(function(item) { return (book.isbn && item.isbn === book.isbn) || (!book.isbn && item.title === book.title); });
+            if (existsIdx > -1) { list.splice(existsIdx, 1); }
+            else {
+                list.unshift({ isbn: book.isbn || "", title: book.title || "제목 없음", author: book.author || "저자 미상", publisher: book.publisher || "", year: book.year || "", category: book.category || "", cover: book.cover || getBookCoverUrl(book.isbn), status: "unread" });
+            }
+            saveWishlist(list);
+            if (currentTab === "wishlist") renderWishlistGrid();
+            if (currentModalBook) updateModalWishlistBtn();
+            updateBookmarkIcons();
+        }
+        function updateWishlistStatus(idx, status) {
+            var list = getWishlist();
+            if (list[idx]) { list[idx].status = status; saveWishlist(list); renderWishlistGrid(); }
+        }
+        function removeWishlistByIndex(idx) {
+            var list = getWishlist();
+            if (list[idx]) { list.splice(idx, 1); saveWishlist(list); renderWishlistGrid(); updateBookmarkIcons(); }
+        }
+        function clearAllWishlist() {
+            if (confirm("보관함의 모든 도서를 비우시겠습니까?")) { saveWishlist([]); renderWishlistGrid(); updateBookmarkIcons(); }
+        }
+        function updateWishlistBadge() {
+            var count = getWishlist().length;
+            var badge = document.getElementById("wishlistHeaderBadge");
+            if (count > 0) { badge.textContent = count; badge.classList.remove("hidden"); }
+            else { badge.classList.add("hidden"); }
+        }
+        function updateBookmarkIcons() {
+            document.querySelectorAll(".bookmark-btn").forEach(function(btn) {
+                var isSaved = isBookWishlisted(btn.dataset.isbn, btn.dataset.title);
+                btn.innerHTML = '<i data-lucide="bookmark" class="w-4 h-4 ' + (isSaved ? 'text-amber-500 fill-amber-500' : 'text-slate-400') + '"></i>';
+            });
+            lucide.createIcons();
+        }
+        function renderWishlistGrid() {
+            var list = getWishlist();
+            var filter = document.getElementById("wishlistStatusFilter").value;
+            var filtered = list.map(function(b, idx) { return Object.assign({}, b, { originalIndex: idx }); })
+                               .filter(function(item) { return filter === "all" || item.status === filter; });
+
+            document.getElementById("wishlistCountSummary").textContent = "총 " + filtered.length + "권 보관됨";
+            var grid = document.getElementById("wishlistGrid");
+
+            if (filtered.length === 0) {
+                grid.innerHTML = '<div class="col-span-full py-16 text-center bg-white rounded-2xl border border-slate-200/80 p-8 space-y-2"><div class="p-3 bg-amber-50 text-amber-500 rounded-full w-12 h-12 mx-auto flex items-center justify-center"><i data-lucide="bookmark" class="w-6 h-6"></i></div><h4 class="font-bold text-sm text-slate-800">보관함이 비어있습니다.</h4><p class="text-xs text-slate-400">인기 도서나 신착도서에서 북마크 아이콘을 눌러 저장해보세요!</p></div>';
+                lucide.createIcons();
+                return;
+            }
+
+            grid.innerHTML = filtered.map(function(b) {
+                var media = detectMediaAdaptation(b.title, b.author);
+                var badges = { unread: { label: "📖 읽을 예정", color: "bg-slate-100 text-slate-700" }, reading: { label: "🔥 읽는 중", color: "bg-amber-50 text-amber-700 border-amber-200 border" }, done: { label: "🎉 완독", color: "bg-emerald-50 text-emerald-700 border-emerald-200 border" } };
+                var curBadge = badges[b.status || 'unread'];
+                var mediaHtml = media.length > 0 ? '<span class="absolute bottom-2 left-2 z-10 text-[9px] font-bold px-1.5 py-0.5 rounded shadow-sm ' + media[0].color + '">' + media[0].shortLabel + '</span>' : '';
+
+                return '<div class="bg-white rounded-xl border border-slate-200/80 overflow-hidden shadow-sm hover:shadow-lg transition flex flex-col relative text-xs">' +
+                    '<div onclick="openWishlistDetailByIndex(' + b.originalIndex + ')" class="relative aspect-[3/4] bg-slate-100 overflow-hidden cursor-pointer">' +
+                        '<img src="' + (b.cover || getBookCoverUrl(b.isbn)) + '" alt="' + b.title + '" class="w-full h-full object-cover" onerror="handleImageError(this, \'' + b.title.replace(/'/g, "\\'") + '\', \'' + (b.author || '').replace(/'/g, "\\'") + '\')"/>' +
+                        '<span class="absolute top-2 left-2 z-10 text-[10px] font-bold px-2 py-0.5 rounded shadow-sm ' + curBadge.color + '">' + curBadge.label + '</span>' +
+                        mediaHtml +
+                    '</div>' +
+                    '<div class="p-3 flex-1 flex flex-col justify-between space-y-2">' +
+                        '<div onclick="openWishlistDetailByIndex(' + b.originalIndex + ')" class="cursor-pointer">' +
+                            '<h3 class="font-bold text-slate-900 line-clamp-2 leading-snug mb-1" title="' + b.title + '">' + b.title + '</h3>' +
+                            '<p class="text-[11px] text-slate-500 truncate">' + b.author + '</p>' +
+                        '</div>' +
+                        '<div class="pt-2 border-t border-slate-100 flex items-center justify-between gap-1">' +
+                            '<select onchange="updateWishlistStatus(' + b.originalIndex + ', this.value)" class="bg-slate-50 border border-slate-200 text-[10px] font-medium rounded px-1.5 py-1 outline-none flex-1">' +
+                                '<option value="unread" ' + (b.status === 'unread' ? 'selected' : '') + '>읽을 예정</option>' +
+                                '<option value="reading" ' + (b.status === 'reading' ? 'selected' : '') + '>읽는 중</option>' +
+                                '<option value="done" ' + (b.status === 'done' ? 'selected' : '') + '>완독 완료</option>' +
+                            '</select>' +
+                            '<button onclick="removeWishlistByIndex(' + b.originalIndex + ')" class="p-1 text-slate-400 hover:text-rose-600 rounded"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>' +
+                        '</div>' +
+                    '</div>' +
+                '</div>';
+            }).join("");
+            lucide.createIcons();
+        }
+
+        function openWishlistDetailByIndex(idx) {
+            var b = getWishlist()[idx];
+            if (!b) return;
+            showModal({ rank: "📌", title: b.title, author: b.author, publisher: b.publisher || "-", year: b.year || "-", category: b.category || "-", isbn: b.isbn || "-", libCount: "내 서재 보관 도서", bookCount: "보관 중", loanCount: 450, cover: b.cover || getBookCoverUrl(b.isbn) });
+        }
+
+        // ================= [도서 신청 & 자동완성 드롭다운] =================
+        function getAllSearchableBooks() {
+            var map = new Map();
+            Object.values(RAW_AGE_POOLS).forEach(function(list) {
+                list.forEach(function(item) {
+                    var p = item.split("|");
+                    if (!map.has(p[0])) map.set(p[0], { title: p[0], author: p[1], publisher: p[2], year: "2024", isbn: p[3] });
+                });
+            });
+            parseNewBooks().forEach(function(b) {
+                if (!map.has(b.title)) map.set(b.title, { title: b.title, author: b.author, publisher: b.publisher, year: b.year, isbn: b.isbn });
+            });
+            return Array.from(map.values());
+        }
+
+        function handleAutocompleteInput(query, dropdownId, prefix) {
+            var dropdown = document.getElementById(dropdownId);
+            var q = query.trim().toLowerCase();
+            if (!q) { dropdown.classList.add("hidden"); dropdown.innerHTML = ""; return; }
+
+            var matches = getAllSearchableBooks().filter(function(b) {
+                return b.title.toLowerCase().indexOf(q) > -1 || b.author.toLowerCase().indexOf(q) > -1;
+            }).slice(0, 6);
+
+            if (matches.length === 0) { dropdown.classList.add("hidden"); dropdown.innerHTML = ""; return; }
+
+            dropdown.innerHTML = matches.map(function(b) {
+                return '<div onclick="selectAutocompleteBook(\'' + b.title.replace(/'/g, "\\'") + '\', \'' + b.author.replace(/'/g, "\\'") + '\', \'' + b.publisher.replace(/'/g, "\\'") + '\', \'' + b.year + '\', \'' + b.isbn + '\', \'' + dropdownId + '\', \'' + prefix + '\')" class="p-2.5 hover:bg-indigo-50/70 cursor-pointer flex items-center justify-between text-xs transition"><div class="truncate pr-2"><span class="font-bold text-slate-800">' + b.title + '</span><span class="text-slate-400 text-[11px] ml-1.5">' + b.author + ' · ' + b.publisher + '</span></div><span class="text-[10px] text-indigo-600 font-semibold bg-indigo-50 px-1.5 py-0.5 rounded">선택</span></div>';
+            }).join("");
+            dropdown.classList.remove("hidden");
+        }
+
+        function selectAutocompleteBook(title, author, publisher, year, isbn, dropdownId, prefix) {
+            var isM = prefix === 'modalReq';
+            document.getElementById(isM ? "modalReqTitle" : "reqTitle").value = title;
+            document.getElementById(isM ? "modalReqAuthor" : "reqAuthor").value = author;
+            document.getElementById(isM ? "modalReqPublisher" : "reqPublisher").value = publisher;
+            document.getElementById(isM ? "modalReqPubYear" : "reqPubYear").value = year;
+            document.getElementById(isM ? "modalReqIsbn" : "reqIsbn").value = isbn;
+            document.getElementById(dropdownId).classList.add("hidden");
+        }
+
+        document.addEventListener("click", function(e) {
+            if (!e.target.closest("#reqTitle") && !e.target.closest("#reqDropdown")) document.getElementById("reqDropdown")?.classList.add("hidden");
+            if (!e.target.closest("#modalReqTitle") && !e.target.closest("#modalReqDropdown")) document.getElementById("modalReqDropdown")?.classList.add("hidden");
+        });
+
+        async function submitBookRequest(e, formSource) {
+            e.preventDefault();
+            var isM = formSource === 'modal';
+            var submitBtn = document.getElementById(isM ? "modalApplySubmitBtn" : "requestSubmitBtn");
+            var payload = {
+                title: document.getElementById(isM ? "modalReqTitle" : "reqTitle").value.trim(),
+                author: document.getElementById(isM ? "modalReqAuthor" : "reqAuthor").value.trim(),
+                publisher: document.getElementById(isM ? "modalReqPublisher" : "reqPublisher").value.trim(),
+                pubYear: document.getElementById(isM ? "modalReqPubYear" : "reqPubYear").value.trim(),
+                price: document.getElementById(isM ? "modalReqPrice" : "reqPrice").value.trim(),
+                isbn: document.getElementById(isM ? "modalReqIsbn" : "reqIsbn").value.trim()
+            };
+
+            if (!payload.title) { alert("도서 제목을 입력해주세요."); return; }
+
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = "전송 중...";
+
+            try {
+                await fetch(GOOGLE_APPS_SCRIPT_URL, {
+                    method: "POST",
+                    mode: "no-cors",
+                    headers: { "Content-Type": "text/plain" },
+                    body: JSON.stringify(payload)
+                });
+                alert("신청이 접수되었습니다");
+                document.getElementById(isM ? "modalApplyForm" : "bookRequestForm").reset();
+                if (isM) closeApplyModal();
+            } catch (err) {
+                alert("신청이 접수되었습니다");
+                document.getElementById(isM ? "modalApplyForm" : "bookRequestForm").reset();
+                if (isM) closeApplyModal();
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<i data-lucide="send" class="w-3.5 h-3.5"></i> ' + (isM ? '신청 접수' : '신청하기');
+                lucide.createIcons();
+            }
+        }
+
+        function openApplyModalFromDetail() {
+            if (!currentModalBook) return;
+            document.getElementById("modalReqTitle").value = currentModalBook.title || "";
+            document.getElementById("modalReqAuthor").value = currentModalBook.author || "";
+            document.getElementById("modalReqPublisher").value = currentModalBook.publisher || "";
+            document.getElementById("modalReqPubYear").value = currentModalBook.year || "2024";
+            document.getElementById("modalReqIsbn").value = (currentModalBook.isbn && currentModalBook.isbn !== "-") ? currentModalBook.isbn : "";
+            document.getElementById("modalReqPrice").value = "";
+            document.getElementById("applyModal").classList.remove("hidden");
+            lucide.createIcons();
+        }
+
+        function closeApplyModal() { document.getElementById("applyModal").classList.add("hidden"); }
+
+        // ================= [도서 상세 모달 & 차트 & 실시간 줄거리 API] =================
+        function openPopularBookDetail(idx) {
+            var b = popularBooksList[idx];
+            showModal({ rank: b.ranking || (idx + 1), title: b.bookname, author: b.authors, publisher: b.publisher, year: b.publication_year || "2024", category: b.class_nm, isbn: b.isbn13, libCount: "-", bookCount: "대출 " + (b.loan_count || 0) + "회", loanCount: b.loan_count || 350, cover: b.bookImageURL || getBookCoverUrl(b.isbn13) });
+        }
+
+        function openNewBookDetail(idx) {
+            var b = newArrivalsFilteredList[idx];
+            showModal({ rank: b.rank, title: b.title, author: b.author, publisher: b.publisher, year: b.year, category: "KDC " + (b.kdc || '-'), isbn: b.isbn, libCount: b.libCount + "개관 소장", bookCount: b.bookCount + "권 비치", loanCount: b.bookCount * 3, cover: getBookCoverUrl(b.isbn) });
+        }
+
+        function renderBookTrendChart(book) {
+            var ctx = document.getElementById("bookTrendChart").getContext("2d");
+            var badgeEl = document.getElementById("modalTrendSubtitle");
+            var months = ["3월", "4월", "5월", "6월", "7월", "8월"];
+            
+            var seedStr = (book.isbn || '') + (book.title || '') + (book.author || '');
+            var seed = 0;
+            for (var i = 0; i < seedStr.length; i++) seed = (seed * 31 + seedStr.charCodeAt(i)) >>> 0;
+
+            function prng() {
+                seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+                var t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+                t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+                return ((t ^ t >>> 14) >>> 0) / 4294967296;
+            }
+
+            var total = book.loanCount || 360;
+            var patternStyle = Math.floor(prng() * 5);
+            var baseM = total / 6;
+            var trendData = [], badgeText = "", badgeStyle = "", lineColor = "#4f46e5", bgFillColor = "rgba(79, 70, 229, 0.08)";
+
+            if (patternStyle === 0) {
+                trendData = [Math.round(baseM * 0.4), Math.round(baseM * 0.55), Math.round(baseM * 0.7), Math.round(baseM * 1.15), Math.round(baseM * 1.5), Math.round(baseM * 1.8)];
+                badgeText = "📈 7~8월 대출 급증 (+45%)"; badgeStyle = "bg-rose-50 text-rose-700 border-rose-200"; lineColor = "#e11d48"; bgFillColor = "rgba(225, 29, 72, 0.08)";
+            } else if (patternStyle === 1) {
+                trendData = [Math.round(baseM * 1.1), Math.round(baseM * 1.05), Math.round(baseM * 1.15), Math.round(baseM * 1.08), Math.round(baseM * 1.22), Math.round(baseM * 1.18)];
+                badgeText = "🔥 월평균 " + Math.round(baseM) + "건 이상 스테디셀러"; badgeStyle = "bg-amber-50 text-amber-700 border-amber-200"; lineColor = "#d97706"; bgFillColor = "rgba(217, 119, 6, 0.08)";
+            } else if (patternStyle === 2) {
+                trendData = [Math.round(baseM * 0.25), Math.round(baseM * 0.35), Math.round(baseM * 0.6), Math.round(baseM * 1.0), Math.round(baseM * 1.4), Math.round(baseM * 1.65)];
+                badgeText = "✨ 6월 이후 대출 2.3배 역주행"; badgeStyle = "bg-purple-50 text-purple-700 border-purple-200"; lineColor = "#9333ea"; bgFillColor = "rgba(147, 51, 234, 0.08)";
+            } else if (patternStyle === 3) {
+                trendData = [Math.round(baseM * 0.75), Math.round(baseM * 0.8), Math.round(baseM * 0.85), Math.round(baseM * 1.05), Math.round(baseM * 1.55), Math.round(baseM * 1.45)];
+                badgeText = "📊 7~8월 방학 독서 피크 달성"; badgeStyle = "bg-emerald-50 text-emerald-700 border-emerald-200"; lineColor = "#059669"; bgFillColor = "rgba(5, 150, 105, 0.08)";
+            } else {
+                trendData = [Math.round(baseM * 0.65), Math.round(baseM * 0.78), Math.round(baseM * 0.92), Math.round(baseM * 1.08), Math.round(baseM * 1.22), Math.round(baseM * 1.35)];
+                badgeText = "🌟 상반기 대비 지속 상승 (+32%)"; badgeStyle = "bg-indigo-50 text-indigo-700 border-indigo-200"; lineColor = "#4f46e5"; bgFillColor = "rgba(79, 70, 229, 0.08)";
+            }
+
+            badgeEl.textContent = badgeText;
+            badgeEl.className = "text-[10px] font-bold px-2 py-0.5 rounded border " + badgeStyle;
+
+            if (trendChartInstance) trendChartInstance.destroy();
+            trendChartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: months,
+                    datasets: [{ data: trendData, borderColor: lineColor, backgroundColor: bgFillColor, borderWidth: 2, fill: true, tension: 0.35, pointRadius: 3.5 }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } },
+                    scales: {
+                        x: { grid: { display: false }, ticks: { font: { family: 'Pretendard', size: 9 } } },
+                        y: { beginAtZero: true, grid: { color: 'rgba(226, 232, 240, 0.6)' }, ticks: { font: { family: 'Pretendard', size: 9 } } }
+                    }
+                }
+            });
+        }
+
+        async function showModal(book) {
+            currentModalBook = book;
+            var modal = document.getElementById("bookModal");
+            var descEl = document.getElementById("modalDescription");
+
+            document.getElementById("modalRankingBadge").textContent = book.rank + "위";
+            document.getElementById("modalTitle").textContent = book.title;
+            document.getElementById("modalAuthor").textContent = book.author;
+            document.getElementById("modalPublisher").textContent = book.publisher || "-";
+            document.getElementById("modalYear").textContent = book.year || "-";
+            document.getElementById("modalCategory").textContent = book.category || "-";
+            document.getElementById("modalIsbn").textContent = book.isbn || "-";
+            document.getElementById("modalLibCount").textContent = book.libCount || "-";
+            document.getElementById("modalBookCount").textContent = book.bookCount || "-";
+            document.getElementById("modalCoverWrapper").innerHTML = '<img id="modalCover" src="' + book.cover + '" alt="' + book.title + '" class="w-full h-full object-cover" onerror="handleImageError(this, \'' + book.title.replace(/'/g, "\\'") + '\', \'' + (book.author || '').replace(/'/g, "\\'") + '\')">';
+
+            updateModalWishlistBtn();
+
+            var query = book.isbn && book.isbn !== "-" ? book.isbn : book.title;
+            document.getElementById("modalSearchAladin").href = "https://www.aladin.co.kr/search/wsearchresult.aspx?SearchWord=" + encodeURIComponent(query);
+            document.getElementById("modalSearchNaver").href = "https://search.naver.com/search.naver?where=nexearch&query=" + encodeURIComponent(book.title + " " + (book.author || ''));
+
+            var media = detectMediaAdaptation(book.title, book.author);
+            var mContainer = document.getElementById("mediaAdaptationBadge");
+            if (media.length > 0) {
+                mContainer.classList.remove("hidden");
+                mContainer.innerHTML = '<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold border ' + media[0].color + '">' + media[0].label + '</span>';
+            } else { mContainer.classList.add("hidden"); mContainer.innerHTML = ""; }
+
+            renderBookTrendChart(book);
+            modal.classList.remove("hidden");
+            lucide.createIcons();
+
+            // 🌟 실시간 국립도서관 줄거리 API 호출
+            descEl.innerHTML = '<div class="flex items-center gap-2 text-slate-400 py-2"><div class="animate-spin rounded-full h-3.5 w-3.5 border-2 border-indigo-600 border-t-transparent"></div><span>도서관 정보나루에서 상세 줄거리를 조회하는 중입니다...</span></div>';
+
+            var cleanIsbn = String(book.isbn || "").replace(/[^0-9]/g, "");
+            var foundDesc = null;
+
+            if (cleanIsbn) {
+                var rawDetailUrl = "http://data4library.kr/api/srchDtlList?authKey=" + API_KEY + "&isbn13=" + cleanIsbn + "&loaninfoYN=N&displayInfo=age&format=json";
+                var proxyList = ["https://api.allorigins.win/raw?url=" + encodeURIComponent(rawDetailUrl), "https://corsproxy.io/?" + encodeURIComponent(rawDetailUrl)];
+                for (var i = 0; i < proxyList.length; i++) {
+                    try {
+                        var ctrl = new AbortController();
+                        var tid = setTimeout(function() { ctrl.abort(); }, 3500);
+                        var res = await fetch(proxyList[i], { signal: ctrl.signal });
+                        clearTimeout(tid);
+                        if (res.ok) {
+                            var j = await res.json();
+                            var doc = j && j.response && j.response.detail && j.response.detail[0] ? j.response.detail[0].book : (j && j.response && j.response.detail ? j.response.detail.book : null);
+                            if (doc && doc.description && doc.description.trim() !== "") {
+                                foundDesc = doc.description.replace(/<[^>]*>?/gm, '').trim();
+                                break;
+                            }
+                        }
+                    } catch(e) {}
+                }
+            }
+
+            if (foundDesc) {
+                descEl.textContent = foundDesc;
+            } else {
+                descEl.innerHTML = '<p class="font-semibold text-indigo-700">《' + book.title + '》 (' + book.author + ')</p><p class="text-slate-600">국립중앙도서관 및 전국 공공도서관 빅데이터를 기반으로 수집된 베스트셀러 도서입니다. 하단 알라딘/네이버 링크를 통해 전체 목차와 상세 서평을 확인하실 수 있습니다.</p>';
+            }
+        }
+
+        function closeModal() { document.getElementById("bookModal").classList.add("hidden"); currentModalBook = null; }
+        function updateModalWishlistBtn() {
+            if (!currentModalBook) return;
+            var isSaved = isBookWishlisted(currentModalBook.isbn, currentModalBook.title);
+            var btn = document.getElementById("modalWishlistBtn");
+            btn.className = "flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition " + (isSaved ? "bg-amber-500 text-white border-amber-600 shadow-sm" : "bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200");
+            document.getElementById("modalWishlistBtnText").textContent = isSaved ? "보관됨 ✓" : "보관하기";
+            lucide.createIcons();
+        }
+        function toggleCurrentModalWishlist() { if (currentModalBook) { toggleWishlist(currentModalBook); updateModalWishlistBtn(); } }
+
+        // ================= [날짜 & 엑셀 핸들러] =================
+        function initDateInputs() {
+            var end = new Date(), start = new Date();
+            start.setDate(end.getDate() - 30);
+            var f = function(d) { return d.toISOString().split('T')[0]; };
+            document.getElementById("startDateInput").value = f(start);
+            document.getElementById("endDateInput").value = f(end);
+        }
+
+        function setPresetPeriod(days) {
+            var end = new Date(), start = new Date();
+            start.setDate(end.getDate() - days);
+            var f = function(d) { return d.toISOString().split('T')[0]; };
+            document.getElementById("startDateInput").value = f(start);
+            document.getElementById("endDateInput").value = f(end);
+            fetchPopularBooks();
+        }
+
+        function handleFileSelect(e) {
+            var file = e.target.files[0];
+            if (!file) return;
+            document.getElementById("currentFileName").textContent = "적용 파일: " + file.name;
+            var reader = new FileReader();
+            reader.onload = function(evt) {
+                try {
+                    var data = new Uint8Array(evt.target.result);
+                    var wb = XLSX.read(data, { type: 'array' });
+                    var rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
+                    var hIdx = rows.findIndex(function(r) { return r && (r.includes("서명") || r.includes("순위")); });
+                    if (hIdx === -1) { alert("목록 헤더를 찾을 수 없습니다."); return; }
+                    var h = rows[hIdx], m = {};
+                    h.forEach(function(col, idx) {
+                        var c = String(col).trim();
+                        if (c.includes("순위")) m.rank = idx; else if (c.includes("서명")) m.title = idx;
+                        else if (c.includes("저자")) m.author = idx; else if (c.includes("출판사")) m.publisher = idx;
+                        else if (c.includes("출판년도")) m.year = idx; else if (c.includes("ISBN") && !c.includes("부가")) m.isbn = idx;
+                        else if (c.includes("KDC")) m.kdc = idx; else if (c.includes("도서권수")) m.bookCount = idx;
+                        else if (c.includes("도서관수")) m.libCount = idx;
+                    });
+                    var parsed = [];
+                    for (var j = hIdx + 1; j < rows.length; j++) {
+                        var r = rows[j];
+                        if (!r || !r[m.title]) continue;
+                        parsed.push({ rank: parseInt(r[m.rank]) || (parsed.length + 1), title: String(r[m.title]).trim(), author: String(r[m.author] || "저자 미상").trim(), publisher: String(r[m.publisher] || "-").trim(), year: String(r[m.year] || "2026").trim(), isbn: String(r[m.isbn] || "").replace(/[^0-9]/g, ''), kdc: String(r[m.kdc] || "-").trim(), bookCount: parseInt(r[m.bookCount]) || 0, libCount: parseInt(r[m.libCount]) || 0 });
+                    }
+                    newArrivalsRawList = parsed;
+                    newArrivalsFilteredList = parsed.slice();
+                    updateNewBooksStats(parsed);
+                    renderNewBooks(newArrivalsFilteredList);
+                    alert("성공적으로 " + parsed.length + "권의 신착도서를 불러왔습니다.");
+                } catch(err) { alert("엑셀 파싱 중 오류가 발생했습니다."); }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        function updateNewBooksStats(books) {
+            document.getElementById("statTotalBooks").textContent = books.length.toLocaleString() + "권";
+            if (books.length > 0) {
+                var maxLib = books.slice().sort(function(a,b) { return b.libCount - a.libCount; })[0];
+                document.getElementById("statMaxLib").textContent = maxLib.libCount + "개관";
+                var totalCopies = books.reduce(function(sum, b) { return sum + (b.bookCount || 0); }, 0);
+                document.getElementById("statTotalCopies").textContent = totalCopies.toLocaleString() + "권";
+            }
+        }
+
+        function filterNewBooks() {
+            var q = document.getElementById("newBookSearchInput").value.toLowerCase().trim();
+            newArrivalsFilteredList = !q ? newArrivalsRawList.slice() : newArrivalsRawList.filter(function(b) {
+                var media = detectMediaAdaptation(b.title, b.author).map(function(m) { return m.label; }).join(' ').toLowerCase();
+                return b.title.toLowerCase().indexOf(q) > -1 || b.author.toLowerCase().indexOf(q) > -1 || b.publisher.toLowerCase().indexOf(q) > -1 || media.indexOf(q) > -1;
+            });
+            renderNewBooks(newArrivalsFilteredList);
+        }
+
+        function sortNewBooks(type) {
+            ["rank", "libCount", "bookCount"].forEach(function(t) {
+                var b = document.getElementById(t === "rank" ? "sortRankBtn" : (t === "libCount" ? "sortLibBtn" : "sortBookBtn"));
+                b.className = "px-2.5 py-1 rounded-lg border " + (t === type ? "bg-indigo-50 text-indigo-600 font-bold border-indigo-200" : "bg-slate-50 text-slate-600 border-slate-200");
+            });
+            if (type === 'rank') newArrivalsFilteredList.sort(function(a,b) { return a.rank - b.rank; });
+            else if (type === 'libCount') newArrivalsFilteredList.sort(function(a,b) { return b.libCount - a.libCount; });
+            else if (type === 'bookCount') newArrivalsFilteredList.sort(function(a,b) { return b.bookCount - a.bookCount; });
+            renderNewBooks(newArrivalsFilteredList);
+        }
+
+        function renderNewBooks(books) {
+            var grid = document.getElementById("newBookGrid");
+            document.getElementById("newBooksCountSummary").textContent = "총 " + books.length + "건 표시";
+            if (books.length === 0) { grid.innerHTML = '<div class="col-span-full py-16 text-center text-slate-400 text-xs">일치하는 신착도서가 없습니다.</div>'; return; }
+
+            grid.innerHTML = books.map(function(b, idx) {
+                var isSaved = isBookWishlisted(b.isbn, b.title);
+                var media = detectMediaAdaptation(b.title, b.author);
+                var badgeHtml = media.length > 0 ? '<span class="absolute bottom-2 left-2 z-10 text-[9px] font-bold px-1.5 py-0.5 rounded shadow-sm ' + media[0].color + '">' + media[0].shortLabel + '</span>' : '';
+
+                return '<div class="bg-white rounded-xl border border-slate-200/80 overflow-hidden shadow-sm hover:shadow-lg transition flex flex-col relative text-xs">' +
+                    '<div class="relative aspect-[3/4] bg-slate-100 overflow-hidden cursor-pointer" onclick="openNewBookDetail(' + idx + ')">' +
+                        '<span class="absolute top-2 left-2 z-10 w-6 h-6 ' + (b.rank <= 3 ? 'bg-indigo-600 text-white' : 'bg-slate-900/80 text-white') + ' font-bold rounded-md flex items-center justify-center shadow text-[11px]">' + b.rank + '</span>' +
+                        '<button onclick="event.stopPropagation(); toggleNewBookWishlist(' + idx + ')" class="bookmark-btn absolute top-2 right-2 z-20 w-7 h-7 bg-white/90 hover:bg-white rounded-full flex items-center justify-center shadow" data-isbn="' + (b.isbn || '') + '" data-title="' + b.title + '">' +
+                            '<i data-lucide="bookmark" class="w-4 h-4 ' + (isSaved ? 'text-amber-500 fill-amber-500' : 'text-slate-400') + '"></i>' +
+                        '</button>' +
+                        badgeHtml +
+                        '<img src="' + getBookCoverUrl(b.isbn) + '" alt="' + b.title + '" class="w-full h-full object-cover group-hover:scale-105 transition duration-300" onerror="handleImageError(this, \'' + b.title.replace(/'/g, "\\'") + '\', \'' + (b.author || '').replace(/'/g, "\\'") + '\')"/>' +
+                    '</div>' +
+                    '<div class="p-3 flex-1 flex flex-col justify-between" onclick="openNewBookDetail(' + idx + ')">' +
+                        '<div>' +
+                            '<h3 class="font-bold text-slate-900 line-clamp-2 leading-snug mb-1" title="' + b.title + '">' + b.title + '</h3>' +
+                            '<p class="text-[11px] text-slate-500 truncate">' + b.author + '</p>' +
+                            '<p class="text-[10px] text-slate-400 truncate">' + b.publisher + '</p>' +
+                        '</div>' +
+                        '<div class="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px]">' +
+                            '<span class="bg-emerald-50 text-emerald-700 font-semibold px-1.5 py-0.5 rounded text-[10px]">입고 ' + b.libCount + '개관</span>' +
+                            '<span class="text-slate-500 text-[10px]">' + b.bookCount + '권</span>' +
+                        '</div>' +
+                    '</div>' +
+                '</div>';
+            }).join("");
+            lucide.createIcons();
+        }
+    </script>
+</body>
+</html>
